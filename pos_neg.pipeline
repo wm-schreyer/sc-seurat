@@ -1,0 +1,98 @@
+# GFP+/GFP-
+pos_neg.object <- merge(pos.object, y = c(neg.object), add.cell.ids = c("pos", "neg"), project = "pos_neg")
+pos_neg.object
+
+# calculate percentage of total transcripts from mt-genes
+pos_neg.object[["percent.mt"]] <- PercentageFeatureSet(pos_neg.object, pattern = "^MT")
+
+# calculate percentage of total transcripts from rp-genes
+pos_neg.object[["percent.rp"]] <- PercentageFeatureSet(pos_neg.object, pattern = "^RP")
+
+# visualize QC metrics as a violin plot
+VlnPlot(pos_neg.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# create metadata for aggr object
+pos_neg.object$log10GenesPerUMI <- log10(pos_neg.object$nFeature_RNA) / log10(pos_neg.object$nCount_RNA)
+
+#create metadata data frame
+metadata.pos_neg <- pos_neg.object@meta.data
+
+# add cell IDs to metadata
+metadata.pos_neg$cells <- rownames(metadata.pos_neg)
+
+# rename columns
+metadata.pos_neg <- metadata.pos_neg %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+# Add metadata back to Seurat object
+pos_neg.object@meta.data <- metadata.pos_neg
+
+# Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
+pos_neg.filt <- subset(x = pos_neg.object, 
+                    subset = (nGene >= 1000) & 
+                      (log10GenesPerUMI > 0.80) & 
+                      (percent.mt < 15))
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+# Extract counts
+counts.pos_neg <- GetAssayData(object = pos_neg.filt, slot = "counts")
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+nonzero.pos_neg <- counts > 0
+
+# Sums all TRUE values and returns TRUE if more than 10 TRUE values per gene
+keep_genes.pos_neg <- Matrix::rowSums(nonzero) >= 10
+
+# Only keeping those genes expressed in more than 10 cells
+filtered_counts.pos_neg <- counts[keep_genes, ]
+
+# Reassign to filtered Seurat object
+pos_neg.filt <- CreateSeuratObject(filtered_counts, meta.data = pos_neg.filt@meta.data)
+
+# check number of cells in aggr.filt
+# neg=434 pos=347 uni=217 total=998 (no nGene filter, ~22% of cells pass)
+table(aggr.filt@active.ident)
+
+# check QC metrics for pos_neg.filt by population
+VlnPlot(pos_neg.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.3)
+
+# Create .RData object to load at any time
+save(pos_neg.filt, file="pos_neg.filt.RData")
+
+# run sctransform
+pos_neg.filt <- SCTransform(pos_neg.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
+
+# run pca and plot
+pos_neg.filt <- RunPCA(pos_neg.filt, verbose = FALSE)
+DimPlot(pos_neg.filt, reduction = "pca", group.by = 'orig.ident')
+
+# run umap with 40 dims
+pos_neg.filt <- RunUMAP(pos_neg.filt, dims = 1:40, verbose = FALSE)
+
+# find clusters and plot
+pos_neg.filt <- FindNeighbors(pos_neg.filt, dims = 1:40, verbose = FALSE)
+pos_neg.filt <- FindClusters(pos_neg.filt, verbose = FALSE)
+DimPlot(pos_neg.filt, label = TRUE)
+DimPlot(pos_neg.filt, reduction = 'umap', group.by = 'orig.ident')
+
+# Check clusters for noise
+# Determine metrics to plot present in pos_neg.filt@meta.data
+metrics <-  c("percent.mt", "percent.rp", "nUMI")
+
+FeaturePlot(pos_neg.filt, 
+            reduction = "umap", 
+            features = metrics,
+            pt.size = 0.4, 
+            order = TRUE,
+            min.cutoff = 'q10',
+            label = TRUE)
+
+#GFP+/UNI
+pos_uni.object <- merge(pos.object, y = c(uni.object), add.cell.ids = c("pos", "uni"), project = "pos_uni")
+pos_uni.object
+            
+#GFP-/UNI
+neg_uni.object <- merge(neg.object, y = c(uni.object), add.cell.ids = c("neg", "uni"), project = "neg_uni")
+neg_uni.object    
