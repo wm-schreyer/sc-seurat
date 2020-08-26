@@ -1,0 +1,161 @@
+# create object for pos population data
+library(Seurat)
+pos.data <- Read10X(data.dir = "pos_tsv")
+pos.object <- CreateSeuratObject(counts = pos.data, project = "pos")
+pos.object
+
+# create object for neg population data
+library(Seurat)
+neg.data <- Read10X(data.dir = "neg_tsv")
+neg.object <- CreateSeuratObject(counts = neg.data, project = "neg")
+neg.object
+
+# create object for uni population data
+library(Seurat)
+uni.data <- Read10X(data.dir = "uni_tsv")
+uni.object <- CreateSeuratObject(counts = uni.data, project = "uni")
+uni.object
+
+# merge populations into one object
+aggr.object <- merge(pos.object, y = c(neg.object, uni.object), add.cell.ids = c("pos", "neg", "uni"), project = "aggr")
+aggr.object
+
+# calculate percentage of total transcripts from mt-genes
+aggr.object[["percent.mt"]] <- PercentageFeatureSet(aggr.object, pattern = "^MT")
+
+# calculate percentage of total transcripts from rp-genes
+aggr.object[["percent.rp"]] <- PercentageFeatureSet(aggr.object, pattern = "^RP")
+
+# visualize QC metrics as a violin plot
+VlnPlot(aggr.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# visualize QC metrics as a scatter plot
+plot1 <- FeatureScatter(aggr.object, feature1 = "nFeature_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(aggr.object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot3 <- FeatureScatter(aggr.object, feature1 = "percent.rp", feature2 = "nFeature_RNA")
+plot4 <- FeatureScatter(aggr.object, feature1 = "percent.rp", feature2 = "percent.mt")
+plot5 <- FeatureScatter(aggr.object, feature1 = "percent.rp", feature2 = "nCount_RNA")
+plot1 + plot2 + plot3
+
+# create metadata for our aggr object
+aggr.object$log10GenesPerUMI <- log10(aggr.object$nFeature_RNA) / log10(aggr.object$nCount_RNA)
+
+#create metadata data frame
+metadata <- aggr.object@meta.data
+
+# add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# load dplyr library
+library(dplyr)
+
+# rename columns
+metadata <- metadata %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+# Add metadata back to Seurat object
+aggr.object@meta.data <- metadata
+
+# visualize number transcripts/cell
+metadata %>% 
+  ggplot(aes(color=seq_folder, x=nUMI, fill=seq_folder)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500)
+
+# Visualize the distribution of genes detected per cell via histogram
+metadata %>% 
+  ggplot(aes(color=seq_folder, x=nGene, fill=seq_folder)) + 
+  geom_density(alpha = 0.2) + 
+  theme_classic() +
+  scale_x_log10() + 
+  geom_vline(xintercept = 300)
+
+# Visualize the correlation between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+metadata %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=percent.mt)) + 
+  geom_point() + 
+  scale_colour_gradient(low = "gray90", high = "black") +
+  stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 500) +
+  geom_hline(yintercept = 250) +
+  facet_wrap(~seq_folder)
+
+# Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+metadata %>%
+  ggplot(aes(x=log10GenesPerUMI, color=seq_folder, fill=seq_folder)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8)
+
+# Filter out low quality reads using selected thresholds - these will change with experiment
+aggr.filt <- subset(x = aggr.object, 
+                          subset = (nUMI >= 500) & 
+                            (nGene >= 250) & 
+                            (log10GenesPerUMI > 0.80) & 
+                            (percent.mt < 15))
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+# Extract counts
+counts <- GetAssayData(object = aggr.filt, slot = "counts")
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+nonzero <- counts > 0
+
+# Sums all TRUE values and returns TRUE if more than 10 TRUE values per gene
+keep_genes <- Matrix::rowSums(nonzero) >= 10
+
+# Only keeping those genes expressed in more than 10 cells
+filtered_counts <- counts[keep_genes, ]
+
+# Reassign to filtered Seurat object
+aggr.filt <- CreateSeuratObject(filtered_counts, meta.data = aggr.filt@meta.data)
+
+# check number of cells in aggr.filt (~22% of cells pass)
+# neg=434 pos=347 uni=217 total=998
+table(aggr.filt@active.ident)
+
+# check QC metrics for aggr.filt by population
+VlnPlot(aggr.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.3)
+
+# Create .RData object to load at any time
+save(aggr.filt, file="aggr.filt.RData")
+
+# add MT and RP metadata to aggr.filt object
+aggr.filt <- PercentageFeatureSet(aggr.filt, pattern = "^MT-", col.name = "percent.mt")
+aggr.filt <- PercentageFeatureSet(aggr.filt, pattern = "^RP", col.name = "percent.rp")
+
+# run sctransform
+aggr.filt <- SCTransform(aggr.filt, vars.to.regress = c("percent.mt","percent.rp"), verbose = FALSE)
+
+# run pca and plot
+aggr.filt <- RunPCA(aggr.filt, verbose = FALSE)
+DimPlot(aggr.filt, reduction = "pca", group.by = 'orig.ident')
+
+# run umap with 40 dims
+aggr.filt <- RunUMAP(aggr.filt, dims = 1:40, verbose = FALSE)
+
+# find clusters and plot
+aggr.filt <- FindNeighbors(aggr.filt, dims = 1:40, verbose = FALSE)
+aggr.filt <- FindClusters(aggr.filt, verbose = FALSE)
+DimPlot(aggr.filt, label = TRUE)
+DimPlot(aggr.filt, reduction = 'umap', group.by = 'orig.ident')
+
+# Check clusters for noise
+# Determine metrics to plot present in aggr.filt@meta.data
+metrics <-  c("percent.mt", "percent.rp", "nUMI")
+
+FeaturePlot(aggr.filt, 
+            reduction = "umap", 
+            features = metrics,
+            pt.size = 0.4, 
+            order = TRUE,
+            min.cutoff = 'q10',
+            label = TRUE)
