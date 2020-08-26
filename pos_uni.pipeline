@@ -1,0 +1,86 @@
+##GFP+/UNI
+pos_uni.object <- merge(pos.object, y = c(uni.object), add.cell.ids = c("pos", "uni"), project = "pos_uni")
+pos_uni.object
+
+# calculate percentage of total transcripts from mt-genes
+pos_uni.object[["percent.mt"]] <- PercentageFeatureSet(pos_uni.object, pattern = "^MT")
+
+# calculate percentage of total transcripts from rp-genes
+pos_uni.object[["percent.rp"]] <- PercentageFeatureSet(pos_uni.object, pattern = "^RP")
+
+# visualize QC metrics as a violin plot
+VlnPlot(pos_uni.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# create metadata for aggr object
+pos_uni.object$log10GenesPerUMI <- log10(pos_uni.object$nFeature_RNA) / log10(pos_uni.object$nCount_RNA)
+
+#create metadata data frame
+metadata.pos_uni <- pos_uni.object@meta.data
+
+# add cell IDs to metadata
+metadata.pos_uni$cells <- rownames(metadata.pos_uni)
+
+# rename columns
+metadata.pos_uni <- metadata.pos_uni %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+# Add metadata back to Seurat object
+pos_uni.object@meta.data <- metadata.pos_uni
+
+# Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
+pos_uni.filt <- subset(x = pos_uni.object, 
+                       subset = (nGene >= 1000) & 
+                         (log10GenesPerUMI > 0.80) & 
+                         (percent.mt < 15))
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+# Extract counts
+counts.pos_uni <- GetAssayData(object = pos_uni.filt, slot = "counts")
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+nonzero.pos_uni <- counts.pos_uni > 0
+
+# Sums all TRUE values and returns TRUE if more than 10 TRUE values per gene
+keep_genes.pos_uni <- Matrix::rowSums(nonzero) >= 10
+
+# Only keeping those genes expressed in more than 10 cells
+filtered_counts.pos_uni <- counts.pos_uni[keep_genes, ]
+
+# Reassign to filtered Seurat object
+pos_uni.filt <- CreateSeuratObject(filtered_counts.pos_uni, meta.data = pos_uni.filt@meta.data)
+
+# check number of cells in pos_uni.filt
+# neg=434 pos=347 uni=217 total=998 (no nGene filter, ~22% of cells pass)
+table(aggr.filt@active.ident)
+
+# check QC metrics for pos_uni.filt by population
+VlnPlot(pos_uni.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.3)
+
+# Create .RData object to load at any time
+save(pos_uni.filt, file="pos_uni.filt.RData")
+
+# run sctransform
+pos_uni.filt <- SCTransform(pos_uni.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
+
+# run pca and plot
+pos_uni.filt <- RunPCA(pos_uni.filt, verbose = FALSE)
+DimPlot(pos_uni.filt, reduction = "pca", group.by = 'orig.ident')
+
+# run umap with 40 dims
+pos_uni.filt <- RunUMAP(pos_uni.filt, dims = 1:40, verbose = FALSE)
+
+# find clusters and plot
+pos_uni.filt <- FindNeighbors(pos_uni.filt, dims = 1:40, verbose = FALSE)
+pos_uni.filt <- FindClusters(pos_uni.filt, verbose = FALSE)
+DimPlot(pos_uni.filt, label = TRUE)
+DimPlot(pos_uni.filt, reduction = 'umap', group.by = 'orig.ident')
+
+FeaturePlot(pos_uni.filt, 
+            reduction = "umap", 
+            features = metrics,
+            pt.size = 0.4, 
+            order = TRUE,
+            min.cutoff = 'q10',
+            label = TRUE)
