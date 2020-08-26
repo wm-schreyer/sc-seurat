@@ -16,7 +16,7 @@ uni.data <- Read10X(data.dir = "uni_tsv")
 uni.object <- CreateSeuratObject(counts = uni.data, project = "uni")
 uni.object
 
-# merge populations into one object
+# merge populations into one aggr object
 aggr.object <- merge(pos.object, y = c(neg.object, uni.object), add.cell.ids = c("pos", "neg", "uni"), project = "aggr")
 aggr.object
 
@@ -37,7 +37,7 @@ plot4 <- FeatureScatter(aggr.object, feature1 = "percent.rp", feature2 = "percen
 plot5 <- FeatureScatter(aggr.object, feature1 = "percent.rp", feature2 = "nCount_RNA")
 plot1 + plot2 + plot3
 
-# create metadata for our aggr object
+# create metadata for aggr object
 aggr.object$log10GenesPerUMI <- log10(aggr.object$nFeature_RNA) / log10(aggr.object$nCount_RNA)
 
 #create metadata data frame
@@ -95,10 +95,9 @@ metadata %>%
   theme_classic() +
   geom_vline(xintercept = 0.8)
 
-# Filter out low quality reads using selected thresholds - these will change with experiment
+# Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
 aggr.filt <- subset(x = aggr.object, 
-                          subset = (nUMI >= 500) & 
-                            (nGene >= 250) & 
+                          subset = (nGene >= 1000) & 
                             (log10GenesPerUMI > 0.80) & 
                             (percent.mt < 15))
 
@@ -118,8 +117,9 @@ filtered_counts <- counts[keep_genes, ]
 # Reassign to filtered Seurat object
 aggr.filt <- CreateSeuratObject(filtered_counts, meta.data = aggr.filt@meta.data)
 
-# check number of cells in aggr.filt (~22% of cells pass)
-# neg=434 pos=347 uni=217 total=998
+# check number of cells in aggr.filt
+# neg=434 pos=347 uni=217 total=998 (no nGene filter, ~22% of cells pass)
+# neg=415 pos=286 uni=190 total=891 (with nGene filter, ~20% of cells pass)
 table(aggr.filt@active.ident)
 
 # check QC metrics for aggr.filt by population
@@ -133,7 +133,7 @@ aggr.filt <- PercentageFeatureSet(aggr.filt, pattern = "^MT-", col.name = "perce
 aggr.filt <- PercentageFeatureSet(aggr.filt, pattern = "^RP", col.name = "percent.rp")
 
 # run sctransform
-aggr.filt <- SCTransform(aggr.filt, vars.to.regress = c("percent.mt","percent.rp"), verbose = FALSE)
+aggr.filt <- SCTransform(aggr.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
 
 # run pca and plot
 aggr.filt <- RunPCA(aggr.filt, verbose = FALSE)
@@ -159,3 +159,5 @@ FeaturePlot(aggr.filt,
             order = TRUE,
             min.cutoff = 'q10',
             label = TRUE)
+
+### Return to line 19 and repeat for each pairwise comparison
