@@ -9,7 +9,7 @@ pos.object[["percent.rp"]] <- PercentageFeatureSet(pos.object, pattern = "^RP")
 # visualize QC metrics as a violin plot
 VlnPlot(pos.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
 
-# create metadata for aggr object
+# create metadata for pos object
 pos.object$log10GenesPerUMI <- log10(pos.object$nFeature_RNA) / log10(pos.object$nCount_RNA)
 
 #create metadata data frame
@@ -29,10 +29,10 @@ pos.object@meta.data <- metadata.pos
 
 # Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
 pos.filt <- subset(x = pos.object, 
-                    subset = (nGene >= 300) &
-                      (nGene <= 8000) &
-                      (nUMI >= 500) &
-                      (percent.mt < 20))
+                   subset = (nGene >= 300) &
+                     (nGene <= 8000) &
+                     (nUMI >= 500) &
+                     (percent.mt < 20))
 
 # Output a logical vector for every gene on whether the more than zero counts per cell
 # Extract counts
@@ -51,7 +51,7 @@ filtered_counts.pos <- counts.pos[keep_genes.pos, ]
 pos.filt <- CreateSeuratObject(filtered_counts.pos, meta.data = pos.filt@meta.data)
 
 # check number of cells in pos.filt
-# pos=390 uni=253 total=643
+# pos=390
 table(pos.filt@active.ident)
 
 # check QC metrics for pos.filt by population
@@ -65,7 +65,7 @@ pos.filt <- SCTransform(pos.filt, vars.to.regress = c("percent.mt","nUMI"), verb
 
 # run pca and plot
 pos.filt <- RunPCA(pos.filt, verbose = FALSE)
-DimPlot(pos.filt, reduction = "pca", group.by = 'orig.ident')
+DimPlot(pos.filt, reduction = "pca", group.by = 'seq_folder')
 
 # show features driving pca
 print(pos.filt[["pca"]], dims = 1:2, nfeatures = 5)
