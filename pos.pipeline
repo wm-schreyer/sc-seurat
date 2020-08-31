@@ -1,0 +1,96 @@
+##GFP+ Only
+
+# calculate percentage of total transcripts from mt-genes
+pos.object[["percent.mt"]] <- PercentageFeatureSet(pos.object, pattern = "^MT")
+
+# calculate percentage of total transcripts from rp-genes
+pos.object[["percent.rp"]] <- PercentageFeatureSet(pos.object, pattern = "^RP")
+
+# visualize QC metrics as a violin plot
+VlnPlot(pos.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# create metadata for aggr object
+pos.object$log10GenesPerUMI <- log10(pos.object$nFeature_RNA) / log10(pos.object$nCount_RNA)
+
+#create metadata data frame
+metadata.pos <- pos.object@meta.data
+
+# add cell IDs to metadata
+metadata.pos$cells <- rownames(metadata.pos)
+
+# rename columns
+metadata.pos <- metadata.pos %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+# Add metadata back to Seurat object
+pos.object@meta.data <- metadata.pos
+
+# Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
+pos.filt <- subset(x = pos.object, 
+                    subset = (nGene >= 300) &
+                      (nGene <= 8000) &
+                      (nUMI >= 500) &
+                      (percent.mt < 20))
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+# Extract counts
+counts.pos <- GetAssayData(object = pos.filt, slot = "counts")
+
+# Output a logical vector for every gene on whether the more than zero counts per cell
+nonzero.pos <- counts.pos > 0
+
+# Sums all TRUE values and returns TRUE if more than 10 TRUE values per gene
+keep_genes.pos <- Matrix::rowSums(nonzero.pos) >= 10
+
+# Only keeping those genes expressed in more than 10 cells
+filtered_counts.pos <- counts.pos[keep_genes.pos, ]
+
+# Reassign to filtered Seurat object
+pos.filt <- CreateSeuratObject(filtered_counts.pos, meta.data = pos.filt@meta.data)
+
+# check number of cells in pos.filt
+# pos=390 uni=253 total=643
+table(pos.filt@active.ident)
+
+# check QC metrics for pos.filt by population
+VlnPlot(pos.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.3)
+
+# Create .RData object to load at any time
+save(pos.filt, file="pos.filt.RData")
+
+# run sctransform
+pos.filt <- SCTransform(pos.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
+
+# run pca and plot
+pos.filt <- RunPCA(pos.filt, verbose = FALSE)
+DimPlot(pos.filt, reduction = "pca", group.by = 'orig.ident')
+
+# show features driving pca
+print(pos.filt[["pca"]], dims = 1:2, nfeatures = 5)
+DimHeatmap(pos.filt, dims = 1:5, balanced = TRUE)
+
+# run umap with 40 dims
+pos.filt <- RunUMAP(pos.filt, dims = 1:40, verbose = FALSE)
+
+# find clusters and plot
+pos.filt <- FindNeighbors(pos.filt, dims = 1:40, verbose = FALSE)
+pos.filt <- FindClusters(pos.filt, verbose = FALSE)
+DimPlot(pos.filt, label = TRUE)
+DimPlot(pos.filt, reduction = 'umap', group.by = 'orig.ident')
+
+FeaturePlot(pos.filt, 
+            reduction = "umap", 
+            features = metrics,
+            pt.size = 0.4, 
+            order = TRUE,
+            min.cutoff = 'q10',
+            label = TRUE)
+
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+pos.markers <- FindAllMarkers(pos.filt, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.75)
+
+# plot the top 10 marker genes per cluster
+pos.top10 <- pos.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+DoHeatmap(pos.filt, features = pos.top10$gene)
