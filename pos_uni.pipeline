@@ -74,7 +74,7 @@ print(pos_uni.filt[["pca"]], dims = 1:2, nfeatures = 5)
 DimHeatmap(pos_uni.filt, dims = 1:5, balanced = TRUE)
 
 # run umap with 40 dims
-pos_uni.filt <- RunUMAP(pos_uni.filt, dims = 1:40, verbose = FALSE)
+pos_uni.filt <- RunUMAP(pos_uni.filt, dims = 1:40, verbose = FALSE)table
 
 # find clusters and plot
 pos_uni.filt <- FindNeighbors(pos_uni.filt, dims = 1:40, verbose = FALSE)
@@ -96,3 +96,9 @@ pos_uni.markers <- FindAllMarkers(pos_uni.filt, only.pos = TRUE, min.pct = 0.25,
 # plot the top 10 marker genes per cluster
 pos_uni.top10 <- pos_uni.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
 DoHeatmap(pos_uni.filt, features = pos_uni.top10$gene)
+
+# plot heatmap for m1.markers by population type
+DoHeatmap(pos_uni.filt, features = m1.markers, group.by = "seq_folder", label = FALSE)
+
+# plot heatmap for m1.markers by cluster
+DoHeatmap(pos_uni.filt, features = m1.markers, label = TRUE) + NoLegend()
