@@ -164,3 +164,15 @@ FeaturePlot(aggr.filt,
             label = TRUE)
 
 ### Return to line 19 and repeat for each pairwise comparison
+
+# create a list of M1 markers
+m1.markers <- c("CD86", "CD68", "CD80", "TNF", "IL1B", "IL-6", "IL-12", "IL-23", "CCL2", "CCL3", "CCL4", "CCL5", "CCL8", "CCL9", "CCL10", "CCL11", "TLR2", "TLR4", "NOS2", "JUN", "HIF1A", "STAT1", "CXCL10", "PKM")
+
+# create a list of M2 markers
+m2.markers <- c("IL-4", "IL-13", "IL-10", "IDO1", "TGM2", "CD163", "CD206", "CCL18", "VEGFA", "SOCS1", "NFKB1", "GLUL", "TGFB1", "IL1RN")
+
+# create a list of M1 & M2 markers
+phage_state.markers <- c("CD80", "TNF", "IL1B", "JUN", "HIF1A", "STAT1", "CXCL10", "PKM", "IL10", "IDO1", "TGM2", "VEGFA", "SOCS1", "NFKB1", "GLUL", "TGFB1", "IL1RN")
+
+# plot heatmap by population type
+DoHeatmap(aggr.filt, features = m1.markers, group.by = "seq_folder", label = FALSE)
