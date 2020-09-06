@@ -61,7 +61,7 @@ VlnPlot(pos.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "perc
 save(pos.filt, file="pos.filt.RData")
 
 # run sctransform
-pos.filt <- SCTransform(pos.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
+pos.filt <- SCTransform(pos.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE, variable.features.n = 4000)
 
 # run pca and plot
 pos.filt <- RunPCA(pos.filt, verbose = FALSE)
@@ -78,8 +78,11 @@ pos.filt <- RunTSNE(pos.filt, dims = 1:40, verbose = FALSE)
 # find clusters and plot
 pos.filt <- FindNeighbors(pos.filt, dims = 1:40, verbose = FALSE)
 pos.filt <- FindClusters(pos.filt, verbose = FALSE)
-DimPlot(pos.filt, label = TRUE)
-DimPlot(pos.filt, reduction = 'umap', group.by = 'orig.ident')
+DimPlot(pos.filt, reduction = 'umap')
+
+# build cluster tree
+pos.tree <- BuildClusterTree(pos.filt)
+PlotClusterTree(pos.tree)
 
 FeaturePlot(pos.filt, 
             reduction = "umap", 
@@ -97,7 +100,12 @@ pos.top10 <- pos.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
 DoHeatmap(pos.filt, features = pos.top10$gene)
 
 # plot heatmap for m1.markers by cluster
-pos_m1_heatmap <- DoHeatmap(pos.filt, features = m1.markers, label = TRUE, ) + NoLegend()
+pos_m1_heatmap <- DoHeatmap(pos.filt, features = m1.markers, label = TRUE, )
 
 #change m1 marker heatmap title
 pos_m1_heatmap + labs(title = "M1 Marker Expression in GFP+ Clusters")
+
+# plot heatmap for m2.markers by cluster
+pos_m2_heatmap <- DoHeatmap(pos.filt, features = m2.markers, label = TRUE, )
+pos_m2_heatmap + labs(title = "M2 Marker Expression in GFP+ Clusters")
+pos_m2_heatmap
