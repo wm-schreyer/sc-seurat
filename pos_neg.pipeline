@@ -31,9 +31,10 @@ pos_neg.object@meta.data <- metadata.pos_neg
 
 # Filter out low quality reads using selected thresholds - nGene filter sets min for unique features and UMI counts
 pos_neg.filt <- subset(x = pos_neg.object, 
-                       subset = (nGene >= 1000) & 
-                         (log10GenesPerUMI > 0.80) & 
-                         (percent.mt < 15))
+                       subset = (nGene >= 300) &
+                         (nGene <= 8000) &
+                         (nUMI >= 500) &
+                         (percent.mt < 20))
 
 # Output a logical vector for every gene on whether the more than zero counts per cell
 # Extract counts
@@ -52,7 +53,7 @@ filtered_counts.pos_neg <- counts.pos_neg[keep_genes, ]
 pos_neg.filt <- CreateSeuratObject(filtered_counts.pos_neg, meta.data = pos_neg.filt@meta.data)
 
 # check number of cells in pos_neg.filt
-# neg=434 pos=347 uni=217 total=998 (no nGene filter, ~22% of cells pass)
+# neg=479, pos=390, total=869
 table(pos_neg.filt@active.ident)
 
 # check QC metrics for pos_neg.filt by population
@@ -62,20 +63,15 @@ VlnPlot(pos_neg.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "
 save(pos_neg.filt, file="pos_neg.filt.RData")
 
 # run sctransform
-pos_neg.filt <- SCTransform(pos_neg.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
-
-# check SCT assay creation?
-pos_neg.filt@assays
-
-# find variable features
-pos_neg.filt <- FindVariableFeatures(pos_neg.filt, selection.method = "vst", nfeatures = 2000)
+pos_neg.filt <- SCTransform(pos_neg.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE, variable.features.n = 4000)
 
 # run pca and plot
-pos_neg.filt <- RunPCA(pos_neg.filt, verbose = FALSE, assay = "SCT")
-DimPlot(pos_neg.filt, reduction = "pca", group.by = 'orig.ident')
+pos_neg.filt <- RunPCA(pos_neg.filt, verbose = FALSE)
+DimPlot(pos_neg.filt, reduction = "pca", group.by = 'seq_folder')
 
 # print features driving pca
 print(pos_neg.filt[["pca"]], dims = 1:2, nfeatures = 5)
+DimHeatmap(pos_neg.filt, dims = 1:5, balanced = TRUE)
 
 # run umap with 40 dims
 pos_neg.filt <- RunUMAP(pos_neg.filt, dims = 1:40, verbose = FALSE)
@@ -83,8 +79,8 @@ pos_neg.filt <- RunUMAP(pos_neg.filt, dims = 1:40, verbose = FALSE)
 # find clusters and plot
 pos_neg.filt <- FindNeighbors(pos_neg.filt, dims = 1:40, verbose = FALSE)
 pos_neg.filt <- FindClusters(pos_neg.filt, verbose = FALSE)
-DimPlot(pos_neg.filt, label = TRUE)
-DimPlot(pos_neg.filt, reduction = 'umap', group.by = 'orig.ident')
+DimPlot(pos_neg.filt, reduction = 'umap')
+DimPlot(pos_neg.filt, reduction = 'umap', group.by = 'seq_folder')
 
 FeaturePlot(pos_neg.filt, 
             reduction = "umap", 
@@ -94,9 +90,14 @@ FeaturePlot(pos_neg.filt,
             min.cutoff = 'q10',
             label = TRUE)
 
-# find markers for every cluster compared to all remaining cells, report only the positive ones
-pos_neg.markers <- FindAllMarkers(pos_neg.filt, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.75)
+# plot heatmap for m1.markers by population type
+DoHeatmap(pos_neg.filt, features = m1.markers, group.by = "seq_folder", label = TRUE) + NoLegend()
 
-# plot the top 10 marker genes per cluster
-top10 <- pos_neg.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
-DoHeatmap(pos_neg.filt, features = top10$gene)
+# plot heatmap for m2.markers by population type
+DoHeatmap(pos_neg.filt, features = m2.markers, group.by = "seq_folder", label = TRUE) + NoLegend()
+
+# plot heatmap for m1.markers by cluster
+DoHeatmap(pos_neg.filt, features = m1.markers, label = TRUE) + NoLegend()
+
+# plot heatmap for m2.markers by cluster
+DoHeatmap(pos_neg.filt, features = m2.markers, label = TRUE) + NoLegend()
