@@ -109,3 +109,7 @@ pos_m1_heatmap + labs(title = "M1 Marker Expression in GFP+ Clusters")
 pos_m2_heatmap <- DoHeatmap(pos.filt, features = m2.markers, label = TRUE, )
 pos_m2_heatmap + labs(title = "M2 Marker Expression in GFP+ Clusters")
 pos_m2_heatmap
+
+# find pos cluster 1 markers
+pos.cluster1.markers <- FindMarkers(pos.filt, ident.1 = 1, logfc.threshold = 0.75)
+print(head(pos.cluster1.markers, 10))
