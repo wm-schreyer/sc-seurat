@@ -63,7 +63,7 @@ VlnPlot(pos_uni.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "
 save(pos_uni.filt, file="pos_uni.filt.RData")
 
 # run sctransform
-pos_uni.filt <- SCTransform(pos_uni.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE)
+pos_uni.filt <- SCTransform(pos_uni.filt, vars.to.regress = c("percent.mt","nUMI"), verbose = FALSE, variable.features.n = 4000)
 
 # run pca and plot
 pos_uni.filt <- RunPCA(pos_uni.filt, verbose = FALSE)
@@ -74,13 +74,13 @@ print(pos_uni.filt[["pca"]], dims = 1:2, nfeatures = 5)
 DimHeatmap(pos_uni.filt, dims = 1:5, balanced = TRUE)
 
 # run umap with 40 dims
-pos_uni.filt <- RunUMAP(pos_uni.filt, dims = 1:40, verbose = FALSE)table
+pos_uni.filt <- RunUMAP(pos_uni.filt, dims = 1:40, verbose = FALSE)
 
 # find clusters and plot
 pos_uni.filt <- FindNeighbors(pos_uni.filt, dims = 1:40, verbose = FALSE)
 pos_uni.filt <- FindClusters(pos_uni.filt, verbose = FALSE)
-DimPlot(pos_uni.filt, label = TRUE)
-DimPlot(pos_uni.filt, reduction = 'umap', group.by = 'orig.ident')
+DimPlot(pos_uni.filt, reduction = 'umap')
+DimPlot(pos_uni.filt, reduction = 'umap', group.by = 'seq_folder')
 
 FeaturePlot(pos_uni.filt, 
             reduction = "umap", 
@@ -98,7 +98,13 @@ pos_uni.top10 <- pos_uni.markers %>% group_by(cluster) %>% top_n(n = 10, wt = av
 DoHeatmap(pos_uni.filt, features = pos_uni.top10$gene)
 
 # plot heatmap for m1.markers by population type
-DoHeatmap(pos_uni.filt, features = m1.markers, group.by = "seq_folder", label = FALSE)
+DoHeatmap(pos_uni.filt, features = m1.markers, group.by = "seq_folder", label = TRUE) + NoLegend()
+
+# plot heatmap for m2.markers by population type
+DoHeatmap(pos_uni.filt, features = m2.markers, group.by = "seq_folder", label = TRUE) + NoLegend()
 
 # plot heatmap for m1.markers by cluster
 DoHeatmap(pos_uni.filt, features = m1.markers, label = TRUE) + NoLegend()
+
+# plot heatmap for m2.markers by cluster
+DoHeatmap(pos_uni.filt, features = m2.markers, label = TRUE) + NoLegend()
