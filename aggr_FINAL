@@ -1,0 +1,117 @@
+R version 4.0.2 (2020-06-22)
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin17.0 (64-bit)
+
+install.packages('Seurat')
+library(Seurat)
+
+# create object for Infected population count matrix
+packageVersion("Seurat")
+pos.data <- Read10X(data.dir = "48_pos_tsv")
+pos.object <- CreateSeuratObject(counts = pos.data, project = "Infected")
+pos.object
+
+# create object for Bystander population count matrix
+neg.data <- Read10X(data.dir = "48_neg_tsv")
+neg.object <- CreateSeuratObject(counts = neg.data, project = "Bystander")
+neg.object
+
+# create object for Control population count matrix
+uni.data <- Read10X(data.dir = "48_uni_tsv")
+uni.object <- CreateSeuratObject(counts = uni.data, project = "Control")
+uni.object
+
+# merge objects for aggregate analysis
+aggr.object <- merge(uni.object, y = c(pos.object, neg.object), add.cell.ids = c("Control", "Infected", "Bystander"), project = "Aggregate")
+aggr.object
+
+# calculate percentage of total transcripts from mt-genes
+aggr.object[["percent.mt"]] <- PercentageFeatureSet(aggr.object, pattern = "^MT-")
+
+# calculate percentage of total transcripts from rp-genes
+aggr.object[["percent.rp"]] <- PercentageFeatureSet(aggr.object, pattern = "^RP")
+
+# visualize aggr.object QC metrics as a violin plot
+VlnPlot(aggr.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+#create metadata data frame
+metadata.aggr <- aggr.object@meta.data
+
+# add cell IDs to metadata
+metadata.aggr$cells <- rownames(metadata.aggr)
+
+# load dplyr library
+library(dplyr)
+
+# rename columns
+metadata.aggr <- metadata.aggr %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+# Add metadata back to Seurat object
+aggr.object@meta.data <- metadata.aggr
+
+# Filter out low quality reads **SCT Assay** - nGene filter sets min for unique features and UMI counts
+aggr.sct <- subset(x = aggr.object, 
+                    subset = (nGene >= 100) &
+                      (nGene <= 8000) &
+                      (percent.mt < 75))
+
+# check population cell numbers
+table(aggr.sct$seq_folder)
+
+# add MT and RP metadata to aggr.filt object
+aggr.sct <- PercentageFeatureSet(aggr.sct, pattern = "^MT-", col.name = "percent.mt")
+aggr.sct <- PercentageFeatureSet(aggr.sct, pattern = "^RP", col.name = "percent.rp")
+
+# run sctransform, use 1/4 unique gene cutoff as variable features limit, regress out percent.mt and percent.rp
+aggr.sct <- SCTransform(aggr.sct, vars.to.regress = c("percent.mt","nGene", "percent.rp"), verbose = FALSE, variable.features.n = 2000)
+
+# run PCA and plot
+aggr.sct <- RunPCA(aggr.sct, verbose = FALSE)
+PCAPlot(aggr.sct)
+
+# cluster cells
+aggr.sct <- FindNeighbors(aggr.sct, dims = 1:40, verbose = FALSE)
+aggr.sct <- FindClusters(aggr.sct, verbose = FALSE)
+
+# run umap with 40 dims and plot
+aggr.sct <- RunUMAP(aggr.sct, dims = 1:40, verbose = FALSE)
+DimPlot(object = aggr.sct, reduction = 'umap')
+DimPlot(object = aggr.sct, reduction = 'umap', group.by = 'seq_folder')
+
+# Filter out low quality reads **RNA Assay** - nGene filter sets min for unique features and UMI counts
+aggr.rna <- subset(x = aggr.object, 
+                   subset = (nGene >= 100) &
+                     (nGene <= 8000) &
+                     (percent.mt < 75))
+
+# check population cell numbers
+table(aggr.rna$seq_folder)
+
+# normalize counts
+aggr.rna <- NormalizeData(aggr.rna, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# scale data
+aggr.rna <- ScaleData(aggr.rna)
+
+# determine dge for genes of interest based on population
+aggr.dge <- FindMarkers(aggr.rna, ident.1 = "Infected", ident.2 = c("Bystander", "Control"), assay = "RNA", features = madhur.genes)
+
+# create grouping of genes of interest
+madhur.genes <- c("AKT1", "BAD", "ATP6V1A", "BCL2", "HK2", "SLC7A11", "CXCL10", "CXCL8", "TNF", "CCL4", "CXCL1", "IL6", "CCL2", "CXCL12", "CSF2", "IL18", "CCL3", "IL1B", "CCL5", "IL2", "IL4", "IL5", "IL12A", "IL13", "IFNG", "IL10", "IL17", "CD80", "CD86", "CIITA", "HLA-DMB", "HLA-DQA1", "PKM", "STAT1", "HIF1A", "JUN", "MRC1", "CD36", "IL1RN", "CD163", "SOCS1", "NFKB1", "TLR8", "GLUL", "VEGFA", "MSR1", "IDO1", "IRF3", "ACTR3", "ARG1", "ARL8", "BECN1", "C1QBP", "CALCOCO2", "CANX", "CASP3", "CHAF1A", "CLTC", "CTSB", "CTSD", "CTTN", "CYCS", "EEA1", "FLOT1", "FLOT2", "ITGAM", "ITGAV", "ITGB3", "KEAP1", "LAMP1", "LAMP2", "LAMP3", "LGALS3", "LGALS8", "MAP1LC3A", "MAPK1", "MAPK3", "MCL1", "MTOR", "NFE2L2", "OSBPL1A", "PARP1", "PIKFYVE", "PRKACA", "PTDSS1", "RAB1B", "RAB24", "RAB5", "RAB7", "RHOA", "SQSTM1", "STX8", "SYT7", "TGFB1", "TLR2", "TLR4", "VAMP3", "VAMP7", "VAMP8", "VASP", "VPS35", "VPS41", "VTI1A", "VTI1B", "WASH1", "FAM21C", "YWHAB")
+
+# switch idents to population for dge
+Idents(object = aggr.filt) <- "seq_folder"
+
+# heatmap of requested genes, using SCT assay
+DoHeatmap(object = aggr.filt, features = madhur.genes)
+
+DotPlot(aggr.filt, features = madhur.genes, group.by = "seq_folder")
+
+# run dge analysis for madhur.genes between populations
+aggr.dge.infected <- FindMarkers(object = aggr.filt, features = madhur.genes, ident.1 = "Infected", ident.2 = NULL, group.by = "seq_folder")
+
+# create csv file and export
+write.csv(aggr.dge.infected, file = "aggr.dge.infected.csv")
