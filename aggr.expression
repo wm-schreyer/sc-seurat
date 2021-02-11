@@ -1,0 +1,94 @@
+library(Seurat)
+library(ggplot2)
+library(viridis)
+
+# create object for Infected population count matrix
+pos.data <- Read10X(data.dir = "pos_tsv")
+pos.object <- CreateSeuratObject(counts = pos.data, project = "Pos")
+pos.object
+
+# create object for Bystander population count matrix
+neg.data <- Read10X(data.dir = "neg_tsv")
+neg.object <- CreateSeuratObject(counts = neg.data, project = "Neg")
+neg.object
+
+# create object for Control population count matrix
+uni.data <- Read10X(data.dir = "uni_tsv")
+uni.object <- CreateSeuratObject(counts = uni.data, project = "Ctrl")
+uni.object
+
+# merge objects for aggregate analysis
+aggr.object <- merge(uni.object, y = c(pos.object, neg.object), add.cell.ids = c("Ctrl", "Pos", "Neg"), project = "aggr")
+aggr.object
+
+# calculate percentage of total transcripts from mt-genes
+aggr.object[["percent.mt"]] <- PercentageFeatureSet(aggr.object, pattern = "^MT-")
+
+# calculate percentage of total transcripts from rp-genes
+aggr.object[["percent.rp"]] <- PercentageFeatureSet(aggr.object, pattern = "^RP")
+
+# visualize aggr.object QC metrics as a violin plot
+VlnPlot(aggr.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# Filter out low quality reads **RNA Assay** - nGene filter sets min for unique features and UMI counts
+aggr.log <- subset(x = aggr.object, 
+                   subset = (nFeature_RNA >= 200) &
+                     (nFeature_RNA <= 8000) & 
+                     (nCount_RNA >= 1000) &
+                     (percent.mt < 30))
+
+# check population cell numbers
+table(aggr.log$orig.ident)
+
+# visualize aggr.filt QC metrics as a violin plot
+VlnPlot(aggr.log, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# log normalization of counts for heatmap analysis **RNA Assay**
+aggr.log <- NormalizeData(aggr.log)
+
+# linear scaling of data
+aggr.log <- ScaleData(aggr.log, vars.to.regress = "percent.mt")
+
+# create grouping of genes of interest
+final.list <- c("AKT1", "HK2", "ATP6V1A", "BCL2", "SLC7A11", "TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "CCL2", "IL6", "PKM", "CIITA", "JUN", "NFKB1", "STAT1", "CD80", "CD86", "HIF1A", "IL10", "GLUL", "IDO1", "TGFB1", "VEGFA", "IRF3", "CD163", "CD36", "MSR1", "TLR8")
+
+m1.list <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "CCL2", "IL6", "PKM", "CIITA", "JUN", "NFKB1", "STAT1", "CD80", "CD86", "HIF1A")
+
+m2.list <- c("IL10", "GLUL", "IDO1", "TGFB1", "VEGFA", "IRF3", "CD163", "CD36", "MSR1", "TLR8")
+
+list1 <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "IL6", "NFKB1", "STAT1", "CD80", "CD86", "TLR2", "TLR4", "CCL11", "IL2", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "IL1B", "CCL5", "PTGS2", "NOS2", "STAT3", "STAT6", "IL10", "GLUL", "TGFB1", "CD163", "CD36", "MSR1", "IL5", "IGF1", "IL4", "IL18", "IL13", "IL17A", "SOCS1", "PTSGS1", "CCL2", "VEGFA") 
+
+list2 <- c("TNF", "IL6", "CCL11", "IL2", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "CXCL1", "CXCL10", "CCL4", "IL1B", "CXCL8", "CCL5", "IL5", "IL4", "CCL2", "IL18", "IL13")
+
+list.m1 <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "IL6", "NFKB1", "STAT1", "CD80", "CD86", "TLR2", "TLR4", "CCL11", "IL2", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "IL1B", "CCL5", "PTGS2", "NOS2")
+
+list.m2 <- list.m2 <- c("STAT3", "STAT6", "IL10", "GLUL", "TGFB1", "CD163", "CD36", "MSR1", "IL5", "IGF1", "IL4", "IL18", "IL13", "IL17A", "SOCS1", "PTSGS1", "CCL2", "VEGFA")
+
+final.m1 <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "NFKB1", "STAT1", "AP1", "IRF5", "CD80", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "IL1B", "CCL5", "PTGS2", "NOS2")
+
+final.m2 <- c("PPARG", "CREB", "IRF4", "STAT3", "STAT6", "IL10", "GLUL", "TGFB1", "CD163", "CD36", "MSR1", "IGF1", "IL4", "IL18", "IL13", "SOCS1", "VEGFA")
+
+# heatmap of final list, normalized counts, viridis color scheme
+DoHeatmap(aggr.log, features = final.list, assay = "RNA", group.by = 'orig.ident', slot = "counts") + scale_fill_viridis()
+# heatmap of final list, data
+DoHeatmap(aggr.log, features = final.list, group.colors = c("#619cff", "#f8766d", "#00ba38"), label = FALSE)
+
+DoHeatmap(aggr.log, assay = "RNA", features = list2, label = FALSE)
+DoHeatmap(aggr.log, assay = "RNA", features = list1, label = FALSE)
+DoHeatmap(aggr.log, assay = "RNA", features = final.list, label = FALSE)
+
+# dotplot, data slot (default)
+DotPlot(aggr.log, features = final.list, assay = "RNA") + labs(caption = "Aggr")
+DotPlot(aggr.log, features = m1.list, assay = "RNA") + labs(caption = "M1-Associated Gene Expression")
+DotPlot(aggr.log, features = m2.list, assay = "RNA") + labs(caption = "M2-Associated Gene Expression")
+
+DotPlot(aggr.log, features = list.m1, assay = "RNA") + labs(caption = "M1-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+DotPlot(aggr.log, features = list.m2, assay = "RNA") + labs(caption = "M2-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+
+DotPlot(aggr.log, features = final.m1, assay = "RNA") + labs(caption = "M1-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+DotPlot(aggr.log, features = final.m2, assay = "RNA") + labs(caption = "M2-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+
+# switch idents to population for dge
+Idents(object = aggr.log) <- "orig.ident"
+# switch default assay for visualization vs. dge
+DefaultAssay(aggr.log) <- "insert assay here"
