@@ -1,0 +1,65 @@
+R.Version()
+install.packages('Seurat')
+library(Seurat)
+library(ggplot2)
+
+# create object for Infected population count matrix
+pos.data <- Read10X(data.dir = "pos_tsv")
+pos.object <- CreateSeuratObject(counts = pos.data, project = "Pos")
+pos.object
+
+# create object for Bystander population count matrix
+neg.data <- Read10X(data.dir = "neg_tsv")
+neg.object <- CreateSeuratObject(counts = neg.data, project = "Neg")
+neg.object
+
+# create object for Control population count matrix
+uni.data <- Read10X(data.dir = "uni_tsv")
+uni.object <- CreateSeuratObject(counts = uni.data, project = "Ctrl")
+uni.object
+
+# merge objects for aggregate analysis
+aggr.object <- merge(uni.object, y = c(pos.object, neg.object), add.cell.ids = c("Ctrl", "Pos", "Neg"), project = "aggr")
+aggr.object
+
+# calculate percentage of total transcripts from mt-genes
+aggr.object[["percent.mt"]] <- PercentageFeatureSet(aggr.object, pattern = "^MT-")
+
+# calculate percentage of total transcripts from rp-genes
+aggr.object[["percent.rp"]] <- PercentageFeatureSet(aggr.object, pattern = "^RP")
+
+# visualize aggr.object QC metrics as a violin plot
+VlnPlot(aggr.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# Filter out low quality reads **SCT Assay** - nGene filter sets min for unique features and UMI counts
+aggr.sct <- subset(x = aggr.object, 
+                    subset = (nFeature_RNA >= 200) &
+                      (nFeature_RNA <= 8000) & 
+                      (nCount_RNA >= 1000) &
+                      (percent.mt < 30))
+
+# check population cell numbers
+table(aggr.sct$orig.ident)
+
+# visualize aggr.filt QC metrics as a violin plot
+VlnPlot(aggr.sct, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# run sctransform for Clustering, use default variable features limit (3,000), regress out percent.mt, nGene **SCT Assay**
+aggr.sct <- SCTransform(aggr.sct, vars.to.regress = c("percent.mt","nFeature_RNA"), verbose = FALSE)
+
+# run PCA and plot
+aggr.sct <- RunPCA(aggr.sct, verbose = FALSE, assay = "SCT")
+DimPlot(aggr.sct, reduction = 'pca')
+
+# cluster cells
+aggr.sct <- FindNeighbors(aggr.sct, dims = 1:40, verbose = FALSE, assay = "SCT")
+aggr.sct <- FindClusters(aggr.sct, verbose = FALSE)
+
+# run umap with 40 dims and plot
+aggr.sct <- RunUMAP(aggr.sct, dims = 1:40, verbose = FALSE, assay = "SCT")
+
+# plot umap by clusters
+DimPlot(object = aggr.sct, reduction = 'umap')
+# plot umap by pops
+Idents(object = aggr.sct) <- "orig.ident"
+DimPlot(object = aggr.sct, reduction = 'umap', cols = c("#00ba38", "#f8766d", "#619cff"), order = c("Ctrl", "Neg", "Pos"))
