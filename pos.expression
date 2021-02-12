@@ -1,0 +1,64 @@
+library(Seurat)
+library(ggplot2)
+library(viridis)
+
+# create object for Infected population count matrix
+pos.only.data <- Read10X(data.dir = "pos_tsv")
+pos.only.object <- CreateSeuratObject(counts = pos.data, project = "Pos")
+pos.only.object
+
+# calculate percentage of total transcripts from mt-genes
+pos.only.object[["percent.mt"]] <- PercentageFeatureSet(pos.only.object, pattern = "^MT-")
+
+# calculate percentage of total transcripts from rp-genes
+pos.only.object[["percent.rp"]] <- PercentageFeatureSet(pos.only.object, pattern = "^RP")
+
+# visualize aggr.object QC metrics as a violin plot
+VlnPlot(pos.only.object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# Filter out low quality reads **SCT Assay** - nGene filter sets min for unique features and UMI counts
+pos.sct <- subset(x = pos.only.object, 
+                  subset = (nFeature_RNA >= 200) &
+                    (nFeature_RNA <= 8000) & 
+                    (nCount_RNA >= 1000) &
+                    (percent.mt < 30))
+
+# check population cell numbers
+table(pos.sct$orig.ident)
+
+# visualize aggr.filt QC metrics as a violin plot
+VlnPlot(pos.sct, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+# normalize counts for heatmap analysis **RNA Assay**
+pos.sct <- NormalizeData(pos.sct, assay = "RNA")
+
+# linear scaling of data
+pos.sct <- ScaleData(pos.sct, assay = "RNA", vars.to.regress = "percent.mt")
+
+# create grouping of genes of interest
+final.list <- c("AKT1", "HK2", "ATP6V1A", "BCL2", "SLC7A11", "TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "CCL2", "IL6", "PKM", "CIITA", "JUN", "NFKB1", "STAT1", "CD80", "CD86", "HIF1A", "IL10", "GLUL", "IDO1", "TGFB1", "VEGFA", "IRF3", "CD163", "CD36", "MSR1", "TLR8")
+
+m1.list <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "CCL2", "IL6", "PKM", "CIITA", "JUN", "NFKB1", "STAT1", "CD80", "CD86", "HIF1A")
+
+m2.list <- c("IL10", "GLUL", "IDO1", "TGFB1", "VEGFA", "IRF3", "CD163", "CD36", "MSR1", "TLR8")
+
+list1 <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "IL6", "NFKB1", "STAT1", "CD80", "CD86", "TLR2", "TLR4", "CCL11", "IL2", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "IL1B", "CCL5", "PTGS2", "NOS2", "STAT3", "STAT6", "IL10", "GLUL", "TGFB1", "CD163", "CD36", "MSR1", "IL5", "IGF1", "IL4", "IL18", "IL13", "IL17A", "SOCS1", "PTSGS1", "CCL2", "VEGFA") 
+
+list2 <- c("TNF", "IL6", "CCL11", "IL2", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "CXCL1", "CXCL10", "CCL4", "IL1B", "CXCL8", "CCL5", "IL5", "IL4", "CCL2", "IL18", "IL13")
+
+final.list <- c("TNF", "CCL4", "CXCL1", "CXCL10", "CXCL8", "NFKB1", "STAT1", "AP1", "IRF5", "CD80", "IFNG", "CSF2", "IL12A", "CCL3", "CXCL12", "IL1B", "CCL5", "PTGS2", "NOS2", "PPARG", "CREB", "IRF4", "STAT3", "STAT6", "IL10", "GLUL", "TGFB1", "CD163", "CD36", "MSR1", "IGF1", "IL4", "IL18", "IL13", "SOCS1", "VEGFA")
+
+# heatmap of final list, normalized counts, viridis color scheme
+DoHeatmap(pos.log, features = final.list, assay = "RNA", slot = "counts") + scale_fill_viridis()
+DoHeatmap(pos.sct, features = final.list, label = FALSE, assay = "RNA")
+
+DoHeatmap(pos.sct, assay = "RNA", features = list2, label = FALSE)
+DoHeatmap(pos.sct, assay = "RNA", features = list1, label = FALSE)
+DoHeatmap(pos.sct, assay = "RNA", features = final.list, label = FALSE)
+
+# dotplot, data slot (default)
+DotPlot(pos.sct, features = list.m1, assay = "RNA") + labs(caption = "M1-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+DotPlot(pos.sct, features = list.m2, assay = "RNA") + labs(caption = "M2-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+
+DotPlot(pos.sct, features = final.m1, assay = "RNA") + labs(caption = "M1-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
+DotPlot(pos.sct, features = final.m2, assay = "RNA") + labs(caption = "M2-Associated Gene Expression") + theme(axis.text.x = element_text(angle = 90))
