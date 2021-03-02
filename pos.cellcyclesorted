@@ -1,0 +1,100 @@
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+
+# create object for Infected population count matrix
+pos.data <- Read10X(data.dir = "pos_tsv")
+pos.object <- CreateSeuratObject(counts = pos.data, project = "Pos")
+pos.object
+
+# calculate percentage of total transcripts from mt-genes
+pos.object[["percent.mt"]] <- PercentageFeatureSet(pos.object, pattern = "^MT-")
+
+# calculate percentage of total transcripts from rp-genes
+pos.object[["percent.rp"]] <- PercentageFeatureSet(pos.object, pattern = "^RP")
+
+# Filter out low quality reads **SCT Assay** - nGene filter sets min for unique features and UMI counts
+pos.filt <- subset(x = pos.object, 
+                  subset = (nFeature_RNA >= 200) &
+                    (nFeature_RNA <= 8000) & 
+                    (nCount_RNA >= 1000) &
+                    (percent.mt < 30))
+
+# check population cell numbers
+table(pos.filt$orig.ident)
+
+# visualize aggr.filt QC metrics as a violin plot
+VlnPlot(pos.filt, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0.5)
+
+
+### Calculate cell cycle scores
+
+# separate genes into s vs. g/m phases
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# normalize & scale data
+pos.filt <- NormalizeData(pos.filt, verbose = FALSE)
+pos.filt <- ScaleData(pos.filt, verbose = FALSE)
+
+# calculate and assign cell cycle scores
+pos.filt <- CellCycleScoring(pos.filt, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+# run PCA on cell cycle genes
+pos.filt <- RunPCA(pos.filt, features = c(s.genes, g2m.genes))
+DimPlot(pos.filt)
+
+# run sctransform for Clustering, use default variable features limit (3,000), regress out percent.mt, nGene **SCT Assay**
+pos.filt <- SCTransform(pos.filt,  vars.to.regress = c("S.Score", "G2M.Score"), verbose = FALSE)
+
+# check to ensure cell cycle no longer driving PCA
+pos.filt <- RunPCA(pos.filt, features = c(s.genes, g2m.genes))
+DimPlot(pos.filt)
+
+### Clustering analysis
+
+# run PCA and plot
+pos.filt <- RunPCA(pos.filt, verbose = FALSE, assay = "SCT")
+DimPlot(pos.filt)
+
+# cluster cells
+pos.filt <- FindNeighbors(pos.filt, dims = 1:40, verbose = FALSE, assay = "SCT")
+pos.filt <- FindClusters(pos.filt, verbose = FALSE)
+
+# run tsne with 40 dims and plot
+pos.filt <- RunTSNE(pos.filt, dims = 1:40, verbose = FALSE, assay = "SCT")
+
+# plot tsne by clusters
+DimPlot(object = pos.filt, reduction = 'tsne')
+
+### DGE with DESeq2
+
+# run dge analysis for pos cluster 0 vs. other clusters
+pos.filt.0 <- FindMarkers(object = pos.filt, ident.1 = "0", ident.2 = NULL, test.use = "DESeq2", assay = "RNA", slot = "counts")
+
+# create csv file and export
+write.csv(pos.filt.0, file = "pos.filt.0.csv")
+
+# run dge analysis for pos cluster 1 vs. other clusters
+pos.filt.1 <- FindMarkers(object = pos.filt, ident.1 = "1", ident.2 = NULL, test.use = "DESeq2", assay = "RNA", slot = "counts")
+
+# create csv file and export
+write.csv(pos.filt.1, file = "pos.filt.1.csv")
+
+# run dge analysis for pos cluster 2 vs. other clusters
+pos.filt.2 <- FindMarkers(object = pos.filt, ident.1 = "2", ident.2 = NULL, test.use = "DESeq2", assay = "RNA", slot = "counts")
+
+# create csv file and export
+write.csv(pos.filt.2, file = "pos.filt.2.csv")
+
+# run dge analysis for pos cluster 3 vs. other clusters
+pos.filt.3 <- FindMarkers(object = pos.filt, ident.1 = "3", ident.2 = NULL, test.use = "DESeq2", assay = "RNA", slot = "counts")
+
+# create csv file and export
+write.csv(pos.filt.3, file = "pos.filt.3.csv")
+
+## Heatmap of pos top upreg genes by cluster, filtered p-val > 0.05 after aggregation in Excel
+
+pos.topgenes <- c("CD14", "MAFB", "HIST1H4C", "FTH1", "FCER1G", "ISG15", "APOE", "MARCKS", "HMOX1", "PPP1R27", "MYC", "CA2", "DDX21", "CITED4", "PRTN3", "PTTG1", "EBNA1BP2", "PPA1",  "MALAT1", "NEAT1", "NABP1", "NKTR", "SPG7", "LRRC75A", "PHKG1")
+
+DoHeatmap(pos.filt, features = pos.topgenes)
